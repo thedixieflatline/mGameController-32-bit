@@ -13,11 +13,15 @@ You will need to use the Pygame I have supplied in the source as it is compiled 
 To activate copy mGameController folder to C:\Program Files (x86)\Steam\steamapps\common\assettocorsa\apps\python
 
 This app is more of a tutorial on how to do this. I have developed this for something I am working on in my own Assetto Corsa apps.
+I started out to try to find a way to get keyboard an mouse events going with my apps
+Pygame does support this through event but because it is based on SDL the event do not fire if there is not a render window running which I do not want to pop up when the game is going
+But I found that becasue game devices are separate becasue they are usb they have an independent connection to the event queue they can run windowless
+I did most of the code below trying to work out the issues and decide which way to use the features
 I thought other app developers would appreciate knowing how to do this and perhaps even use the technique.
 I will continue to develop this into a more generic class to handle a lot of this so developers can just plug and go on more easily integrate it into their own work if they wish.
 If there is a lot of interest I might even look at adding in serial device support in the future
 This code is setup to be a demo and also I have combined some logic together rather than split it all up to make it easier to read
-Also some of the processing in the main loop could be moved out and some vales stored on start up and not updated every frame
+Also some of the processing in the main loop could be moved out and some values stored on start up and not updated every frame
 Again this was for readability and to make it easier to follow as well as to show beginners how to handle the inputs and how to scan for and work changes to capabilities of using different devices
 
 I have commented throughout but the best place to start the tutorial from is the acUpdate function near the bottom
@@ -164,7 +168,7 @@ class DisplayClass:
         self.event_Controller_label = None
         self.event_Type_label = None
         self.event_Details_label = None
-        self.event_Raw_label = None
+        self.event_Object_label = None
         """ Assetto Corsa library does not like setting class member functions for these calls so I use a class property which has global scope to point to the functions which works
             There is more information about why I do this below in self.AppActivatedFunction and self.AppDismissedFunction
         """
@@ -180,7 +184,7 @@ class DisplayClass:
         Event objects have an event type and a python dictionary of properties we can read see in the function for how to read an event object
 
         For this example I check the event queue directly each frame to see if any events have been posted
-        We need to check the event queue each frame or we will miss an event as they expire after a while (1-2 seconds)
+        We need to check the event queue each frame or we will miss an event as they expire after a while (1-5 seconds)
         After you have read an event list it is removed from the queue so you have to either deal with it straight away or build a system to store it process the results. I am processing event straight away
 
         The only advantages to the event queue example
@@ -201,19 +205,110 @@ class DisplayClass:
         The event queue can overflow when too many events happen at once so you have to write code for that
         If you write a system to store and process events after doing all of that you may still get into race conditions on event timings
         If for example you want to track all controls on a steering wheel you will have to write a lot of code to chase the main event queue
-        when many events and of many types are firing at once and you have to process them each frame if you want real time data
+        when many events and of many types are firing at once and you have to process them each frame if you want real time data"""
 
-        """
+
     def updateEvent(self):
         """ Loop over all events that are in the queue each frame and process the results of them"""
         for event in pygame.event.get():
+            """set display if no controller active"""
+            ac.setFontColor(display.event_Controller_label, 1.0, 1.0, 1.0, 1)
+            ac.setText(display.event_Controller_label, "Waiting For Event Controller")
+            ac.setFontColor(display.event_Type_label, 1.0, 1.0, 1.0, 1)
+            ac.setText(display.event_Type_label, "Waiting For Event Type")
+            ac.setFontColor(display.event_Details_label, 1.0, 1.0, 1.0, 1)
+            ac.setText(display.event_Details_label, "Waiting For Event Details")
+            ac.setFontColor(display.event_Object_label, 1.0, 1.0, 1.0, 1)
+            ac.setText(display.event_Object_label, "Waiting For Event Object")
+
+            """ Pygame has internal constant names for it's events which when called with event.type return a number eg pygame.JOYBUTTONDOWN returns 10
+                If you want a string of the objects name you call the Pygame method pygame.event.event_name(event.type) you must give the event.type which is the int that represents the event type
+                The event object that you get will have different properties depending on which event type it is button state, axis, hat, or trackball
+                The event object details are stored as a python dictionary that you can loop over or access the values directly.
+                Using old school python dictionary access method
+                event.dict['button']
+                returns the button number pressed
+                Using dot notation works as well
+                event.button
+                returns the button number pressed
+                I will use both a few times below to show how it is done
+
+                For reference here are examples of each event object type
+
+                Button up - Event type is 11 (int) event name is JoyButtonUp (string) joy 0 (int) is the controller number that sent the event button (int) is the button number pressed
+                <Event(11-JoyButtonUp{'joy':0,'button':5})>
+
+                Button down
+                <Event(10-JoyButtonDown{'joy':0,'button':5})>
+
+                Axis movement- Event type is 7 (int) event name is JoyAxisMotion (string) axis (int) the axis that moved value returns a float joy 0 (int) is the controller number that sent the event
+                <Event(7-JoyAxisMotion{'axis':0,'value':0,'joy':0})>
+
+                Hat movement - Event type is 9 (int) event name is JoyHatMotion (string) joy 0 (int) is the controller number that sent the event
+                value returns a tuple with 5 different states
+                (0,0) no hat is pressed
+                (1,0) pressed to the right
+                (-1,0) pressed left
+                (0,1) pressed up
+                (0,-1) pressed down
+                hat (int) the hat that moved
+                <Event(9-JoyHatMotion{'joy':0,'value':(1,0),'hat':0})>
+
+                Trackball movement - Event type is 9 (int) event name is JoyBallMotion joy 0 (int) is the controller number that sent the event (string)
+                ball (int) in the trackball controller number that sent the event rel (float {not sure about this value I do not have a trackball perhaps somebody can tell me this}) the relative position of a trackball
+                <Event(8-JoyBallMotion{'joy':0,'ball':0,'rel':0})>
+
+                I have noticed in testing that the float values on the axis can sometimes be rounded using the event version and the values at other time differ slightly
+                I figure this is becasue I am capturing the events at slightly different times for both the object and event method functions
+                I assume if they were all processed together the values would be the same. Going to do some more testing of this later
+
+                Get the event type and process it for the first one I will use old school python dict method to get values"""
             if(event.type == pygame.JOYBUTTONDOWN):
-                ac.console("Event Type {0}".format(event.type))
-                ac.console("Event Details {0}".format(str(event)))
-                ac.console("Controller Number {0}".format(event.joy))
-                ac.console("Button pressed {0}".format(event.button))
-                if (event.dict['button'] == 15):
-                    ac.console("You pressed the Top Black Button on a Logitech G25 or 27 Shifter")
+                ac.setFontColor(display.event_Controller_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Controller_label, "Controller {0}".format(event.dict['joy']))
+                ac.setFontColor(display.event_Type_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Type_label, "Event Type: {0} --- Event Name: {1}".format(event.type,pygame.event.event_name(event.type)))
+                ac.setFontColor(display.event_Details_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Details_label, "Button {0} Pressed from controller {1}".format(event.dict['button'],event.dict['joy']))
+                ac.setFontColor(display.event_Object_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Object_label, "Event Object {0}".format(event))
+                """Now I will use the dot notation method"""
+            elif(event.type == pygame.JOYBUTTONUP ):
+                ac.setFontColor(display.event_Controller_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Controller_label, "Controller {0}".format(event.joy))
+                ac.setFontColor(display.event_Type_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Type_label, "Event Type: {0} --- Event Name: {1}".format(event.type,pygame.event.event_name(event.type)))
+                ac.setFontColor(display.event_Details_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Details_label, "Button {0} Released from controller {1}".format(event.button,event.joy))
+                ac.setFontColor(display.event_Object_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Object_label, "Event Object {0}".format(event))
+            elif(event.type == pygame.JOYAXISMOTION ):
+                ac.setFontColor(display.event_Controller_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Controller_label, "Controller {0}".format(event.joy))
+                ac.setFontColor(display.event_Type_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Type_label, "Event Type: {0} --- Event Name: {1}".format(event.type,pygame.event.event_name(event.type)))
+                ac.setFontColor(display.event_Details_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Details_label, "Axis Num: {0} Axis Value: {1}".format(event.axis,event.value))
+                ac.setFontColor(display.event_Object_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Object_label, "Event Object {0}".format(event))
+            elif(event.type == pygame.JOYHATMOTION ):
+                ac.setFontColor(display.event_Controller_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Controller_label, "Controller {0}".format(event.joy))
+                ac.setFontColor(display.event_Type_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Type_label, "Event Type: {0} --- Event Name: {1}".format(event.type,pygame.event.event_name(event.type)))
+                ac.setFontColor(display.event_Details_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Details_label, "Hat Num: {0} Position: {1}".format(event.hat,event.value))
+                ac.setFontColor(display.event_Object_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Object_label, "Event Object {0}".format(event))
+            elif(event.type == pygame.JOYBALLMOTION ):
+                ac.setFontColor(display.event_Controller_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Controller_label, "Controller {0}".format(event.joy))
+                ac.setFontColor(display.event_Type_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Type_label, "Event Type: {0} --- Event Name: {1}".format(event.type,pygame.event.event_name(event.type)))
+                ac.setFontColor(display.event_Details_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Details_label, "Ball Num: {0} Value: {1}".format(event.ball,event.rel))
+                ac.setFontColor(display.event_Object_label, 0.0, 1.0, 0.1, 1)
+                ac.setText(display.event_Object_label, "Event Object {0}".format(event))
 
     """ The object method function example
         This is the better of the two methods if you want to do more complex and reliable systems.
@@ -227,7 +322,7 @@ class DisplayClass:
         Has global AC python method call returning properties on the object
         Is portable as a class object
         We do not have to write our own functions to get the data from events and ensure the accuracy of data and timing it is batteries included
-        Does not need to be checked every frame if required, we just get the vales when we need them and calling pygame.event.pump() in acUpdate means the value will always be current
+        Does not need to be checked every frame if required, we just get the values when we need them and calling pygame.event.pump() in acUpdate means the value will always be current
         Provides information that is difficult to get or impossible from the event queue like how manny button on a controller
         Allows us to get all of the device properties and handle them on startup ready to be used in app even if the properties change because of using a different device
         Do not have to write a lot of code to chase the main event queue when many events and of many types are firing at once and you have to process them each frame
@@ -244,7 +339,7 @@ class DisplayClass:
             """Update label with the value from the number of devices connected value that we have in the gameController instance"""
             ac.setText(display.device_count_label, "Total Detected Devices : {0}".format(gamedevice.device_count))
 
-            """Start to get the vales from the device number one, created in setInitialStatus above (instance name is gamedevice.device)
+            """Start to get the values from the device number one, created in setInitialStatus above (instance name is gamedevice.device)
                 We can now call the instance methods (listed at the top of this script^^^^) on the device to get values for each of it's properties
                 Set labels to show device id gamedevice.device.get_id() and device name gamedevice.device.get_name()"""
             ac.setText(display.device_get_id_label, "Device ID : {0}".format(gamedevice.device.get_id()))
@@ -325,26 +420,26 @@ class DisplayClass:
                 If the first axis has a true condition because it was moved then display the value"""
                 if(gamedevice.device.get_axis(0)):
                     """Get axis 1 value and set the label if an axis is used by the device"""
-                    ac.setText(display.device_get_axis_label_1, "Axis 1 Value: {0}".format(gamedevice.device.get_axis(0)))
+                    ac.setText(display.device_get_axis_label_1, "Axis 0 Value: {0}".format(gamedevice.device.get_axis(0)))
                 elif(gamedevice.device.get_axis(0) == 0.0):
                     """Display this if an axis is NOT used by the device The value of the axis will give a value of 0.0 which means it is detected but not being used"""
-                    ac.setText(display.device_get_axis_label_1, "Axis 1 Not Used")
+                    ac.setText(display.device_get_axis_label_1, "Axis 0 Not Used")
                 if(gamedevice.device.get_axis(1)):
-                    ac.setText(display.device_get_axis_label_2, "Axis 2 Value: {0}".format(gamedevice.device.get_axis(1)))
+                    ac.setText(display.device_get_axis_label_2, "Axis 1 Value: {0}".format(gamedevice.device.get_axis(1)))
                 elif(gamedevice.device.get_axis(1) == 0.0):
-                    ac.setText(display.device_get_axis_label_2, "Axis 2 Not Used")
+                    ac.setText(display.device_get_axis_label_2, "Axis 1 Not Used")
                 if(gamedevice.device.get_axis(2)):
-                    ac.setText(display.device_get_axis_label_3, "Axis 3 Value: {0}".format(gamedevice.device.get_axis(2)))
+                    ac.setText(display.device_get_axis_label_3, "Axis 2 Value: {0}".format(gamedevice.device.get_axis(2)))
                 elif(gamedevice.device.get_axis(2) == 0.0):
-                    ac.setText(display.device_get_axis_label_3, "Axis 3 Not Used")
+                    ac.setText(display.device_get_axis_label_3, "Axis 2 Not Used")
                 if(gamedevice.device.get_axis(3)):
-                    ac.setText(display.device_get_axis_label_4, "Axis 4 Value: {0}".format(gamedevice.device.get_axis(3)))
+                    ac.setText(display.device_get_axis_label_4, "Axis 3 Value: {0}".format(gamedevice.device.get_axis(3)))
                 elif(gamedevice.device.get_axis(3) == 0.0):
-                    ac.setText(display.device_get_axis_label_4, "Axis 4 Not Used")
+                    ac.setText(display.device_get_axis_label_4, "Axis 3 Not Used")
                 if(gamedevice.device.get_axis(4)):
-                    ac.setText(display.device_get_axis_label_5, "Axis 5 Value: {0}".format(gamedevice.device.get_axis(4)))
+                    ac.setText(display.device_get_axis_label_5, "Axis 4 Value: {0}".format(gamedevice.device.get_axis(4)))
                 elif(gamedevice.device.get_axis(4) == 0.0):
-                    ac.setText(display.device_get_axis_label_5, "Axis 3 Not Used")
+                    ac.setText(display.device_get_axis_label_5, "Axis 4 Not Used")
             else:
                 """ Update to this if no axis controller detected on device"""
                 ac.setText(display.device_get_numaxes_label, "No Axis Controller Found")
@@ -406,10 +501,15 @@ class DisplayClass:
             """Check to see if there are any trackball controls
                 Update labels with number of buttons detected if number of button controllers does not equal zero"""
             if(gamedevice.device.get_numballs() != 0):
-                """ Update label with number of hat detected"""
+                """ Update label with number of trackballs detected"""
                 ac.setText(display.device_get_numballs_label, "Track Ball Count : {0}".format(gamedevice.device.get_numballs()))
-                ac.setText(display.device_get_ball_label, "Track Ball Value : {0}".format(gamedevice.device.get_ball(0)))
+                """ Run the loop which reads in only the number of trackballs available"""
+                for i in range(gamedevice.device.get_numballs()):
+                    """If the trackball had been moved"""
+                    if(gamedevice.device.get_ball(i)):
+                        ac.setText(display.device_get_ball_label, "Track Ball Value : {0}".format(gamedevice.device.get_ball(i)))
             else:
+                """ Update to this if no trackball controller detected on device"""
                 ac.setText(display.device_get_numballs_label, "No Trackball Controller Detected")
                 ac.setFontColor(display.device_get_numballs_label, 0.6, 0.6, 1.0, 1)
                 ac.setText(display.device_get_ball_label, "No Trackball Controller Detected")
@@ -449,10 +549,15 @@ class DisplayClass:
             ac.setFontColor(display.device_get_ball_label, 0.6, 0.6, 1.0, 1)
 
     def AppActivatedFunction(self,val):
-        pass
+        """Restart Pygame"""
+        pygame.init()
+        """ Then set initial status on gamedevice instance which can now create the device object because pygame is running """
+        gamedevice.setInitialStatus()
 
     def AppDismissedFunction(self,val):
+        """on AppDismissed quit pygame so no crash or lockup."""
         pygame.quit()
+
         """ Only problem I have found with using classes in AC python is that display controls which use a callback function do not seem to have global scope when called directly and fail
             In those cases I create a class property (self.MySpinnerEvent) and pass internally to the function itself and then AC can call this function globally OK as a class property
             The function call requires the x argument (self,x) as a reference to the callback is passed and without it there it fails
@@ -484,10 +589,10 @@ def acMain(ac_version):
     display.appWindow = ac.newApp("mGameController")
     ac.addOnAppActivatedListener(display.appWindow, display.AppActivated)
     ac.addOnAppDismissedListener(display.appWindow, display.AppDismissed)
-    ac.setSize(display.appWindow, 1050, 550)
+    ac.setSize(display.appWindow, 1000, 550)
 
     display.object_label = ac.addLabel(display.appWindow, "The Object Properties Example - read mGameController.py for more detail")
-    ac.setPosition(display.object_label, 10, 30)
+    ac.setPosition(display.object_label, 10, 40)
     ac.setFontColor(display.object_label, 0.0, 0.85, 0.85, 1)
     ac.setFontAlignment(display.object_label,'left')
 
@@ -572,31 +677,31 @@ def acMain(ac_version):
     ac.setFontAlignment(display.device_get_ball_label,'left')
 
     display.event_label = ac.addLabel(display.appWindow, "The Event Queue Example - read mGameController.py for more detail")
-    ac.setPosition(display.event_label, 10, 430)
+    ac.setPosition(display.event_label, 10, 440)
     ac.setFontColor(display.event_label, 0.0, 0.85, 0.85, 1)
     ac.setFontAlignment(display.event_label,'left')
 
     display.event_Type_label = ac.addLabel(display.appWindow, "event_Type")
-    ac.setPosition(display.event_Type_label, 10, 450)
+    ac.setPosition(display.event_Type_label, 10, 460)
     ac.setFontColor(display.event_Type_label, 1.0, 1.0, 1.0, 1)
     ac.setFontAlignment(display.event_Type_label,'left')
 
     display.event_Controller_label = ac.addLabel(display.appWindow, "event_Controller")
-    ac.setPosition(display.event_Controller_label, 10, 470)
+    ac.setPosition(display.event_Controller_label, 10, 480)
     ac.setFontColor(display.event_Controller_label, 1.0, 1.0, 1.0, 1)
     ac.setFontAlignment(display.event_Controller_label,'left')
 
     display.event_Details_label = ac.addLabel(display.appWindow, "event_Details")
-    ac.setPosition(display.event_Details_label, 10, 490)
+    ac.setPosition(display.event_Details_label, 10, 500)
     ac.setFontColor(display.event_Details_label, 1.0, 1.0, 1.0, 1)
     ac.setFontAlignment(display.event_Details_label,'left')
 
-    display.event_Raw_label = ac.addLabel(display.appWindow, "event_Raw")
-    ac.setPosition(display.event_Raw_label, 10, 510)
-    ac.setFontColor(display.event_Raw_label, 1.0, 1.0, 1.0, 1)
-    ac.setFontAlignment(display.event_Raw_label,'left')
+    display.event_Object_label = ac.addLabel(display.appWindow, "event_Object")
+    ac.setPosition(display.event_Object_label, 10, 520)
+    ac.setFontColor(display.event_Object_label, 1.0, 1.0, 1.0, 1)
+    ac.setFontAlignment(display.event_Object_label,'left')
 
-    """ Must init Pygame now and maust be first"""
+    """ Must init Pygame now and must be first before trying to access the gamedevice.device object"""
     pygame.init()
     """ Then set initial status on gamedevice instance which can now create the device object because pygame is running """
     gamedevice.setInitialStatus()
@@ -610,7 +715,7 @@ def acUpdate(deltaT):
         Both use it in different ways and have pros and cons which I will explain inside each function"""
     pygame.event.pump()
     """The event queue style approach - Go read the information in the class DisplayClass Use for simple things a few events from one device a button push or just to get some values etc"""
-    #display.updateEvent()
+    display.updateEvent()
     """ The object property style approach - Go read the information in the class DisplayClass Better for more reliable real time input, more information, simpler, easier for more complex tasks"""
     display.updateObject()
 
