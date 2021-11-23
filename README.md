@@ -3,7 +3,7 @@ mGameController
 
 Provides the ability to get control inputs from game devices in Assetto Corsa
 
-mGameController 0.6
+mGameController 0.6 November 2021
 
 GitHub Page: https://github.com/thedixieflatline/mGameController
 
